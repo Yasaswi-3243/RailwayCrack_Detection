@@ -1,0 +1,6 @@
+path: /Users/yasaswiasrith/Desktop/rail-crack-detection/dataset
+train: images/train
+val: images/val
+
+nc: 1
+names: ['Crack']
