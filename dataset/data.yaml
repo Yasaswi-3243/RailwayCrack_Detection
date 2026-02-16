@@ -1,0 +1,13 @@
+train: ../train/images
+val: ../valid/images
+test: ../test/images
+
+nc: 1
+names: ['crack']
+
+roboflow:
+  workspace: mehran-university-of-engineering-and-technology-jamshoro
+  project: railway-track-crack-detection
+  version: 3
+  license: CC BY 4.0
+  url: https://universe.roboflow.com/mehran-university-of-engineering-and-technology-jamshoro/railway-track-crack-detection/dataset/3
