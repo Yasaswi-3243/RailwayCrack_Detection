@@ -688,15 +688,23 @@ def predict():
             filename = file.filename
             image_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
             file.save(image_path)
+            
+            # Detect image format
+            try:
+                with Image.open(image_path) as img:
+                    image_format = img.format.upper() if img.format else 'UNKNOWN'
+            except Exception:
+                image_format = 'UNKNOWN'
+            
             output_name, detections = detect_defects(image_path, conf=None)
             # Store result for this session
             session['original'] = filename
             session['output'] = output_name
             session['detections'] = detections
             timestamp = int(time.time() * 1000)
-            return render_template("predict.html", original=filename, output=output_name, detections=detections, timestamp=timestamp)
+            return render_template("predict.html", original=filename, output=output_name, detections=detections, timestamp=timestamp, image_format=image_format)
     # GET: clear display on refresh/direct visit
-    response = app.make_response(render_template("predict.html", original=None, output=None, detections=None, timestamp=None))
+    response = app.make_response(render_template("predict.html", original=None, output=None, detections=None, timestamp=None, error=None, image_format=None))
     response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
     response.headers['Pragma'] = 'no-cache'
     response.headers['Expires'] = '0'
