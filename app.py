@@ -1,7 +1,7 @@
 import os
 import uuid
 import time
-from flask import Flask, request, render_template, redirect, url_for, session
+from flask import Flask, request, jsonify, send_from_directory
 from ultralytics import YOLO
 from PIL import Image, ImageDraw, ImageFont, ImageOps, ImageEnhance, ImageFilter
 import cv2
@@ -11,8 +11,17 @@ import numpy as np
 app = Flask(__name__)
 app.secret_key = os.getenv("FLASK_SECRET_KEY", "rail_crack_secret")
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-UPLOAD_FOLDER = os.path.join(BASE_DIR, 'static', 'uploads')
-app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+UPLOAD_ROOT = os.path.join(BASE_DIR, 'static', 'uploads')
+INPUT_DIR = os.path.join(UPLOAD_ROOT, 'input')
+OUTPUT_DIR = os.path.join(UPLOAD_ROOT, 'output')
+TEMP_DIR = os.path.join(UPLOAD_ROOT, 'temp')
+ASSET_DIR = os.path.join(UPLOAD_ROOT, 'assets')
+DIST_FOLDER = os.path.join(BASE_DIR, 'frontend', 'dist')
+app.config['UPLOAD_ROOT'] = UPLOAD_ROOT
+app.config['INPUT_DIR'] = INPUT_DIR
+app.config['OUTPUT_DIR'] = OUTPUT_DIR
+app.config['TEMP_DIR'] = TEMP_DIR
+app.config['ASSET_DIR'] = ASSET_DIR
 
 # Load YOLO model
 MODEL_PATH = os.path.join(BASE_DIR, "best.pt")
@@ -419,7 +428,7 @@ def detect_defects(image_path, conf: float | None = None, iou: float = 0.45, img
     # 1b) If image is blurry, run predictions on deblurred variants
     if is_blurry:
         for name, var_img in _preprocess_for_blur(base_img):
-            tmp = os.path.join(app.config['UPLOAD_FOLDER'], f"blur_{name}_{uuid.uuid4().hex[:6]}.jpg")
+            tmp = os.path.join(app.config['TEMP_DIR'], f"blur_{name}_{uuid.uuid4().hex[:6]}.jpg")
             var_img.save(tmp, format="JPEG", quality=95)
             try:
                 r = model.predict(source=tmp, conf=max(0.008, direct_conf * 0.8), iou=iou, imgsz=max(1600, imgsz), augment=True, verbose=False)
@@ -443,7 +452,7 @@ def detect_defects(image_path, conf: float | None = None, iou: float = 0.45, img
     temp_files = []
     try:
         for t in tiles:
-            tmp_path = os.path.join(app.config['UPLOAD_FOLDER'], f"tmp_{uuid.uuid4().hex[:8]}.jpg")
+            tmp_path = os.path.join(app.config['TEMP_DIR'], f"tmp_{uuid.uuid4().hex[:8]}.jpg")
             t['image'].save(tmp_path, format="JPEG", quality=95)
             temp_files.append(tmp_path)
             tile_conf = max(0.02, direct_conf * 0.5)  # Very sensitive for catching cracks
@@ -462,7 +471,7 @@ def detect_defects(image_path, conf: float | None = None, iou: float = 0.45, img
             try:
                 enhanced_tile = ImageEnhance.Contrast(t['image']).enhance(1.8)
                 enhanced_tile = ImageEnhance.Sharpness(enhanced_tile).enhance(1.6)
-                enh_path = os.path.join(app.config['UPLOAD_FOLDER'], f"enh_{uuid.uuid4().hex[:8]}.jpg")
+                enh_path = os.path.join(app.config['TEMP_DIR'], f"enh_{uuid.uuid4().hex[:8]}.jpg")
                 enhanced_tile.save(enh_path, format="JPEG", quality=95)
                 temp_files.append(enh_path)
                 enh_conf = max(0.01, direct_conf * 0.4)
@@ -656,62 +665,61 @@ def detect_defects(image_path, conf: float | None = None, iou: float = 0.45, img
         })
 
     output_name = f"output_{uuid.uuid4().hex[:8]}.png"
-    output_path = os.path.join(app.config['UPLOAD_FOLDER'], output_name)
+    output_path = os.path.join(app.config['OUTPUT_DIR'], output_name)
     image.save(output_path)
     return output_name, detections
 
-# Routes
-@app.route("/")
-def home():
-    return render_template("index.html")
+@app.route("/api/predict", methods=["POST"])
+def api_predict():
+    if 'image' not in request.files:
+        return jsonify({"error": "Please select an image file to upload."}), 400
 
-@app.route("/about")
-def about():
-    return render_template("about.html")
+    file = request.files['image']
+    if file.filename == '':
+        return jsonify({"error": "Please select an image file to upload."}), 400
 
-@app.route("/predict", methods=["GET", "POST"])
-def predict():
-    if request.method == "POST":
-        # Check if clear action
-        if request.form.get('action') == 'clear':
-            session.pop('original', None)
-            session.pop('output', None)
-            session.pop('detections', None)
-            return redirect(url_for('predict'))
-        
-        if 'image' not in request.files:
-            return redirect(request.url)
-        file = request.files['image']
-        if file.filename == '':
-            return redirect(request.url)
-        if file:
-            filename = file.filename
-            image_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-            file.save(image_path)
-            
-            # Detect image format
-            try:
-                with Image.open(image_path) as img:
-                    image_format = img.format.upper() if img.format else 'UNKNOWN'
-            except Exception:
-                image_format = 'UNKNOWN'
-            
-            output_name, detections = detect_defects(image_path, conf=None)
-            # Store result for this session
-            session['original'] = filename
-            session['output'] = output_name
-            session['detections'] = detections
-            timestamp = int(time.time() * 1000)
-            return render_template("predict.html", original=filename, output=output_name, detections=detections, timestamp=timestamp, image_format=image_format)
-    # GET: clear display on refresh/direct visit
-    response = app.make_response(render_template("predict.html", original=None, output=None, detections=None, timestamp=None, error=None, image_format=None))
-    response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
-    response.headers['Pragma'] = 'no-cache'
-    response.headers['Expires'] = '0'
-    return response
+    filename = f"{uuid.uuid4().hex}_{file.filename}"
+    image_path = os.path.join(app.config['INPUT_DIR'], filename)
+    file.save(image_path)
+
+    output_name, detections = detect_defects(image_path, conf=None)
+    timestamp = int(time.time() * 1000)
+
+    return jsonify({
+        "original": filename,
+        "output": output_name,
+        "original_url": f"/static/uploads/input/{filename}",
+        "output_url": f"/static/uploads/output/{output_name}",
+        "detections": detections,
+        "timestamp": timestamp,
+    })
+
+
+@app.route("/", defaults={"path": ""})
+@app.route("/<path:path>")
+def serve_react(path):
+    # Keep API endpoints handled separately.
+    if path.startswith("api/"):
+        return jsonify({"error": "Not found"}), 404
+
+    # Serve static frontend assets if requested directly.
+    full_path = os.path.join(DIST_FOLDER, path)
+    if path and os.path.exists(full_path):
+        return send_from_directory(DIST_FOLDER, path)
+
+    # Fallback to SPA entry point.
+    index_path = os.path.join(DIST_FOLDER, "index.html")
+    if os.path.exists(index_path):
+        return send_from_directory(DIST_FOLDER, "index.html")
+
+    return jsonify({"error": "Frontend build missing. Run 'npm run build' in frontend."}), 500
 
 # Start the server
 if __name__ == "__main__":
-    os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+    os.makedirs(UPLOAD_ROOT, exist_ok=True)
+    os.makedirs(INPUT_DIR, exist_ok=True)
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
+    os.makedirs(TEMP_DIR, exist_ok=True)
+    os.makedirs(ASSET_DIR, exist_ok=True)
     port = int(os.getenv("PORT", "5001"))
     app.run(debug=True, host='0.0.0.0', port=port)
