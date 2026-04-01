@@ -1,0 +1,121 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  margin: 0;
+  font-family: 'Segoe UI', Arial, sans-serif;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+.bg-rail {
+  background: linear-gradient(120deg, #232526 0%, #485563 40%, #00c6ff 100%);
+  min-height: 100vh;
+  background-attachment: fixed;
+  animation: bgMove 20s ease-in-out infinite alternate;
+}
+
+@keyframes bgMove {
+  0% {
+    background-position: 0% 50%;
+  }
+  100% {
+    background-position: 100% 50%;
+  }
+}
+
+.card-hover {
+  transition: none;
+}
+
+.card-hover:hover {
+  transform: none;
+  box-shadow: none;
+  border-color: inherit;
+}
+
+.navbar-custom {
+  border-radius: 0 0 16px 16px;
+  background: linear-gradient(90deg, #232526 0%, #00c6ff 100%);
+}
+
+.btn-primary-custom {
+  background: linear-gradient(90deg, #0d6efd 0%, #00c6ff 100%);
+  border: none;
+  transition: background 0.2s, box-shadow 0.2s;
+}
+
+.btn-primary-custom:hover {
+  background: linear-gradient(90deg, #00c6ff 0%, #0d6efd 100%);
+  box-shadow: 0 4px 16px rgba(13, 110, 253, 0.2);
+}
+
+.card-title-custom {
+  color: #00c6ff;
+  font-weight: 700;
+  letter-spacing: 1px;
+}
+
+.card-custom {
+  border-radius: 18px;
+  box-shadow: 0 2px 16px rgba(0, 0, 0, 0.08);
+  border: none;
+  background: #fff;
+}
+
+.predict-img-wrap {
+  position: relative;
+  width: 100%;
+  height: 480px;
+  background: #0b0b0b;
+  border-radius: 12px;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.predict-img {
+  width: auto;
+  height: 100%;
+  max-width: 100%;
+  object-fit: contain;
+  display: block;
+}
+
+.overlay-canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.about-section {
+  background: rgba(255, 255, 255, 0.85);
+  border-radius: 18px;
+  padding: 2rem 2.5rem;
+  margin-bottom: 2rem;
+  box-shadow: 0 4px 24px rgba(0, 198, 255, 0.1);
+}
+
+.about-card {
+  background: linear-gradient(120deg, #e0eafc 0%, #cfdef3 100%);
+  border-left: 6px solid #00c6ff;
+  border-radius: 18px;
+  box-shadow: 0 2px 16px rgba(0, 198, 255, 0.08);
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  background: #232526;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #00c6ff;
+  border-radius: 8px;
+}
