@@ -1,14 +1,17 @@
 import os
 import uuid
 import time
-from flask import Flask, request, render_template, redirect, url_for, session
+import base64
+from flask import Flask, request, jsonify, send_from_directory
+from flask_cors import CORS
 from ultralytics import YOLO
 from PIL import Image, ImageDraw, ImageFont, ImageOps, ImageEnhance, ImageFilter
 import cv2
 import numpy as np
 
 # Setup Flask app
-app = Flask(__name__)
+app = Flask(__name__, static_folder='frontend/dist', static_url_path='')
+CORS(app)  # Enable CORS for all routes
 app.secret_key = os.getenv("FLASK_SECRET_KEY", "rail_crack_secret")
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 UPLOAD_FOLDER = os.path.join(BASE_DIR, 'static', 'uploads')
@@ -660,47 +663,71 @@ def detect_defects(image_path, conf: float | None = None, iou: float = 0.45, img
     image.save(output_path)
     return output_name, detections
 
-# Routes
-@app.route("/")
-def home():
-    return render_template("index.html")
-
-@app.route("/about")
-def about():
-    return render_template("about.html")
-
-@app.route("/predict", methods=["GET", "POST"])
-def predict():
-    if request.method == "POST":
-        # Check if clear action
-        if request.form.get('action') == 'clear':
-            session.pop('original', None)
-            session.pop('output', None)
-            session.pop('detections', None)
-            return redirect(url_for('predict'))
-        
+# API endpoint for React frontend
+@app.route("/api/predict", methods=["POST"])
+def api_predict():
+    """API endpoint for React frontend - returns JSON"""
+    try:
         if 'image' not in request.files:
-            return redirect(request.url)
+            return jsonify({"error": "No image provided"}), 400
+        
         file = request.files['image']
         if file.filename == '':
-            return redirect(request.url)
-        if file:
-            filename = file.filename
-            image_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-            file.save(image_path)
-            output_name, detections = detect_defects(image_path, conf=None)
-            # Store result for this session
-            session['original'] = filename
-            session['output'] = output_name
-            session['detections'] = detections
-            timestamp = int(time.time() * 1000)
-            return render_template("predict.html", original=filename, output=output_name, detections=detections, timestamp=timestamp)
-    # GET: clear display on refresh/direct visit
-    response = app.make_response(render_template("predict.html", original=None, output=None, detections=None, timestamp=None))
-    response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
-    response.headers['Pragma'] = 'no-cache'
-    response.headers['Expires'] = '0'
-    return response
+            return jsonify({"error": "No file selected"}), 400
+        
+        # Save image temporarily
+        filename = uuid.uuid4().hex + os.path.splitext(file.filename)[1]
+        image_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        file.save(image_path)
+        
+        # Run detection
+        start_time = time.time()
+        output_name, detections = detect_defects(image_path, conf=None)
+        analysis_time = f"{time.time() - start_time:.2f}s"
+        
+        # Read the output image and convert to base64
+        output_path = os.path.join(app.config['UPLOAD_FOLDER'], output_name) if output_name else None
+        image_base64 = None
+        if output_path and os.path.exists(output_path):
+            with open(output_path, 'rb') as img_file:
+                image_base64 = base64.b64encode(img_file.read()).decode('utf-8')
+        
+        # Format detections for frontend
+        formatted_detections = []
+        if detections:
+            for det in detections:
+                formatted_detections.append({
+                    'class': det.get('class', 'Crack'),
+                    'confidence': float(det.get('confidence', 0)),
+                    'x': float(det.get('x', 0)),
+                    'y': float(det.get('y', 0)),
+                    'width': float(det.get('width', 0)),
+                    'height': float(det.get('height', 0)),
+                })
+        
+        return jsonify({
+            "success": True,
+            "image": image_base64,
+            "detections": formatted_detections,
+            "analysis_time": analysis_time,
+            "total_detections": len(formatted_detections)
+        })
+    
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/", defaults={"path": ""})
+@app.route("/<path:path>")
+def serve_react(path):
+    # Keep API routes handled by dedicated endpoints.
+    if path.startswith("api/"):
+        return jsonify({"error": "Not found"}), 404
+
+    static_dir = app.static_folder
+    if path and os.path.exists(os.path.join(static_dir, path)):
+        return send_from_directory(static_dir, path)
+    return send_from_directory(static_dir, "index.html")
 
 # Start the server
 if __name__ == "__main__":
